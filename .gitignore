@@ -1,4 +1,11 @@
+# Terraform
 .terraform/
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
+
+# Private Keys
+*.pem
+*.p8
+*.key
+*private_key*
