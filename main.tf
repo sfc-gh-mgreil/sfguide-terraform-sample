@@ -3,9 +3,6 @@ terraform {
     snowflake = {
       source = "snowflakedb/snowflake"
     }
-    tls = {
-      source = "hashicorp/tls"
-    }
   }
 }
 
@@ -15,31 +12,14 @@ locals {
   private_key_path  = "~/.ssh/snowflake_tf_snow_key.p8"
 }
 
-# Primary provider with SYSADMIN role for database/warehouse/schema management
 provider "snowflake" {
-  organization_name         = local.organization_name
-  account_name              = local.account_name
-  user                      = "TERRAFORM_SVC"
-  role                      = "SYSADMIN"
-  authenticator             = "SNOWFLAKE_JWT"
-  private_key               = file(local.private_key_path)
-  preview_features_enabled  = ["snowflake_table_resource"]
+    organization_name = local.organization_name
+    account_name      = local.account_name
+    user              = "TERRAFORM_SVC"
+    role              = "SYSADMIN"
+    authenticator     = "SNOWFLAKE_JWT"
+    private_key       = file(local.private_key_path)
 }
-
-# Secondary provider with USERADMIN role for user/role management
-provider "snowflake" {
-  organization_name = local.organization_name
-  account_name      = local.account_name
-  user              = "TERRAFORM_SVC"
-  role              = "USERADMIN"
-  alias             = "useradmin"
-  authenticator     = "SNOWFLAKE_JWT"
-  private_key       = file(local.private_key_path)
-}
-
-# ============================================
-# Database, Warehouse, and Schema Resources
-# ============================================
 
 resource "snowflake_database" "tf_db" {
   name         = "TF_DEMO_DB"
@@ -64,155 +44,87 @@ resource "snowflake_schema" "tf_db_tf_schema" {
   with_managed_access = false
 }
 
-# ============================================
-# Table Resources
-# ============================================
-
-resource "snowflake_table" "customers" {
-  database = snowflake_database.tf_db.name
-  schema   = snowflake_schema.tf_db_tf_schema.name
-  name     = "CUSTOMERS"
-  comment  = "Customer data table created by Terraform"
-
-  column {
-    name     = "ID"
-    type     = "NUMBER(38,0)"
-    nullable = false
-  }
-
-  column {
-    name     = "FIRST_NAME"
-    type     = "VARCHAR(100)"
-    nullable = false
-  }
-
-  column {
-    name     = "LAST_NAME"
-    type     = "VARCHAR(100)"
-    nullable = false
-  }
-
-  column {
-    name     = "EMAIL"
-    type     = "VARCHAR(255)"
-    nullable = true
-  }
-
-  column {
-    name     = "CREATED_AT"
-    type     = "TIMESTAMP_NTZ(9)"
-    nullable = false
-  }
+provider "snowflake" {
+    organization_name = local.organization_name
+    account_name      = local.account_name
+    user              = "TERRAFORM_SVC"
+    role              = "USERADMIN"
+    alias             = "useradmin"
+    authenticator     = "SNOWFLAKE_JWT"
+    private_key       = file(local.private_key_path)
 }
 
-# ============================================
-# Role and User Resources
-# ============================================
-
 resource "snowflake_account_role" "tf_role" {
-  provider = snowflake.useradmin
-  name     = "TF_DEMO_ROLE"
-  comment  = "My Terraform role"
+    provider          = snowflake.useradmin
+    name              = "TF_DEMO_ROLE"
+    comment           = "My Terraform role"
 }
 
 resource "snowflake_grant_account_role" "grant_tf_role_to_sysadmin" {
-  provider         = snowflake.useradmin
-  role_name        = snowflake_account_role.tf_role.name
-  parent_role_name = "SYSADMIN"
+    provider         = snowflake.useradmin
+    role_name        = snowflake_account_role.tf_role.name
+    parent_role_name = "SYSADMIN"
 }
 
-# Generate RSA key pair for the demo user
 resource "tls_private_key" "svc_key" {
-  algorithm = "RSA"
-  rsa_bits  = 2048
+    algorithm = "RSA"
+    rsa_bits  = 2048
 }
 
 resource "snowflake_user" "tf_user" {
-  provider          = snowflake.useradmin
-  name              = "TF_DEMO_USER"
-  default_warehouse = snowflake_warehouse.tf_warehouse.name
-  default_role      = snowflake_account_role.tf_role.name
-  default_namespace = "${snowflake_database.tf_db.name}.${snowflake_schema.tf_db_tf_schema.fully_qualified_name}"
-  rsa_public_key    = substr(tls_private_key.svc_key.public_key_pem, 27, 398)
+    provider          = snowflake.useradmin
+    name              = "TF_DEMO_USER"
+    default_warehouse = snowflake_warehouse.tf_warehouse.name
+    default_role      = snowflake_account_role.tf_role.name
+    default_namespace = "${snowflake_database.tf_db.name}.${snowflake_schema.tf_db_tf_schema.fully_qualified_name}"
+    rsa_public_key    = substr(tls_private_key.svc_key.public_key_pem, 27, 398)
 }
 
 resource "snowflake_grant_account_role" "grants" {
-  provider  = snowflake.useradmin
-  role_name = snowflake_account_role.tf_role.name
-  user_name = snowflake_user.tf_user.name
+    provider          = snowflake.useradmin
+    role_name         = snowflake_account_role.tf_role.name
+    user_name         = snowflake_user.tf_user.name
 }
 
-# ============================================
-# Privilege Grants
-# ============================================
-
 resource "snowflake_grant_privileges_to_account_role" "grant_usage_tf_db_to_tf_role" {
-  provider          = snowflake.useradmin
-  privileges        = ["USAGE"]
-  account_role_name = snowflake_account_role.tf_role.name
-  on_account_object {
-    object_type = "DATABASE"
-    object_name = snowflake_database.tf_db.name
+    provider          = snowflake.useradmin
+    privileges        = ["USAGE"]
+    account_role_name = snowflake_account_role.tf_role.name
+    on_account_object {
+        object_type = "DATABASE"
+        object_name = snowflake_database.tf_db.name
   }
 }
 
 resource "snowflake_grant_privileges_to_account_role" "grant_usage_tf_db_tf_schema_to_tf_role" {
-  provider          = snowflake.useradmin
-  privileges        = ["USAGE"]
-  account_role_name = snowflake_account_role.tf_role.name
-  on_schema {
-    schema_name = snowflake_schema.tf_db_tf_schema.fully_qualified_name
+    provider          = snowflake.useradmin
+    privileges        = ["USAGE"]
+    account_role_name = snowflake_account_role.tf_role.name
+    on_schema {
+        schema_name = snowflake_schema.tf_db_tf_schema.fully_qualified_name
   }
 }
 
 resource "snowflake_grant_privileges_to_account_role" "grant_all_tables" {
-  provider          = snowflake.useradmin
-  privileges        = ["SELECT"]
-  account_role_name = snowflake_account_role.tf_role.name
-  on_schema_object {
-    all {
-      object_type_plural = "TABLES"
-      in_schema          = snowflake_schema.tf_db_tf_schema.fully_qualified_name
+    provider          = snowflake.useradmin
+    privileges        = ["SELECT"]
+    account_role_name = snowflake_account_role.tf_role.name
+    on_schema_object {
+        all {
+            object_type_plural = "TABLES"
+            in_schema          = snowflake_schema.tf_db_tf_schema.fully_qualified_name
     }
   }
 }
 
 resource "snowflake_grant_privileges_to_account_role" "grant_future_tables" {
-  provider          = snowflake.useradmin
-  privileges        = ["SELECT"]
-  account_role_name = snowflake_account_role.tf_role.name
-  on_schema_object {
-    future {
-      object_type_plural = "TABLES"
-      in_schema          = snowflake_schema.tf_db_tf_schema.fully_qualified_name
+    provider          = snowflake.useradmin
+    privileges        = ["SELECT"]
+    account_role_name = snowflake_account_role.tf_role.name
+    on_schema_object {
+        future {
+            object_type_plural = "TABLES"
+            in_schema          = snowflake_schema.tf_db_tf_schema.fully_qualified_name
     }
   }
-}
-
-# ============================================
-# Outputs
-# ============================================
-
-output "database_name" {
-  value = snowflake_database.tf_db.name
-}
-
-output "warehouse_name" {
-  value = snowflake_warehouse.tf_warehouse.name
-}
-
-output "schema_name" {
-  value = snowflake_schema.tf_db_tf_schema.name
-}
-
-output "role_name" {
-  value = snowflake_account_role.tf_role.name
-}
-
-output "user_name" {
-  value = snowflake_user.tf_user.name
-}
-
-output "table_name" {
-  value = snowflake_table.customers.name
 }
