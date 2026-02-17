@@ -1,4 +1,4 @@
-# Snowflake Terraform Demo
+# Terraform with Snowflake
 
 This project demonstrates Infrastructure as Code (IaC) for Snowflake using Terraform.
 
